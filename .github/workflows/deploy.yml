@@ -1,166 +1,88 @@
-name: Deploy to WordPress.org
+name: Release
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Trigger: si attiva quando viene pubblicata una Release su GitHub.
-# Il tag della release DEVE corrispondere alla versione nel plugin header
-# (es. tag "v1.1.0" → Stable tag: 1.1.0 nel readme.txt).
+# Il tag DEVE corrispondere alla versione nel plugin header e nel README.md
+# (es. tag "v1.0.0" → Version: 1.0.0 nel .php → badge version-1.0.0 nel README)
 # ──────────────────────────────────────────────────────────────────────────────
 on:
   release:
     types: [published]
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Secrets richiesti (Settings → Secrets and variables → Actions):
-#   WPORG_USERNAME  → username del tuo account WordPress.org
-#   WPORG_PASSWORD  → password SVN (NON la password dell'account wp.org,
-#                     ma quella SVN che trovi su
-#                     https://wordpress.org/support/svn-password/ )
-#   WPORG_SLUG      → slug del plugin su wp.org (es. "wp-auto-alt-image")
-# ──────────────────────────────────────────────────────────────────────────────
-
 jobs:
-  deploy:
-    name: Deploy to WordPress.org SVN
+  release:
+    name: Verify & Package
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 10
+
+    permissions:
+      contents: write  # necessario per allegare asset alla Release
 
     steps:
 
-      # ── 1. Checkout del repository ──────────────────────────────────────────
+      # ── 1. Checkout ─────────────────────────────────────────────────────────
       - name: Checkout
         uses: actions/checkout@v4
 
-      # ── 2. Estrai la versione dal tag della release ─────────────────────────
-      #        Il tag può avere il prefisso "v" (es. v1.1.0 → 1.1.0).
+      # ── 2. Estrai la versione dal tag ────────────────────────────────────────
       - name: Extract version from tag
         id: version
         run: |
           TAG="${GITHUB_REF_NAME}"
           VERSION="${TAG#v}"
-          echo "tag=$TAG"      >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG"         >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "→ Version: $VERSION"
+          echo "→ Tag: $TAG | Version: $VERSION"
 
-      # ── 3. Verifica coerenza versione ───────────────────────────────────────
-      #        Controlla che la versione nel tag corrisponda a quella
-      #        nel plugin header e nello Stable tag del readme.txt.
+      # ── 3. Verifica coerenza versione ────────────────────────────────────────
       - name: Verify version consistency
         run: |
           VERSION="${{ steps.version.outputs.version }}"
 
-          # Plugin header (Version: X.Y.Z)
-          PLUGIN_VER=$(grep -m1 'Version:' wp-auto-alt-image.php | sed 's/.*Version:\s*//' | tr -d '[:space:]')
-          # Stable tag nel README.md (badge versione)
-          README_VER=$(grep -m1 'version-' README.md | sed 's/.*version-\([0-9.]*\)-.*/\1/')
+          PLUGIN_VER=$(grep -m1 'Version:' wp-auto-alt-image.php \
+            | sed 's/.*Version:\s*//' | tr -d '[:space:]')
 
-          echo "Tag version    : $VERSION"
-          echo "Plugin header  : $PLUGIN_VER"
-          echo "README.md ver  : $README_VER"
+          README_VER=$(grep -m1 'version-' README.md \
+            | sed 's/.*version-\([0-9.]*\)-.*/\1/')
+
+          echo "Tag version   : $VERSION"
+          echo "Plugin header : $PLUGIN_VER"
+          echo "README.md     : $README_VER"
 
           if [ "$VERSION" != "$PLUGIN_VER" ]; then
-            echo "❌ La versione nel plugin header ($PLUGIN_VER) non corrisponde al tag ($VERSION)."
+            echo "❌ Plugin header ($PLUGIN_VER) ≠ tag ($VERSION)."
             exit 1
           fi
 
           if [ "$VERSION" != "$README_VER" ]; then
-            echo "❌ La versione nel badge README.md ($README_VER) non corrisponde al tag ($VERSION)."
+            echo "❌ README.md badge ($README_VER) ≠ tag ($VERSION)."
             exit 1
           fi
 
           echo "✅ Versioni coerenti."
 
-      # ── 4. Installa SVN ─────────────────────────────────────────────────────
-      - name: Install SVN
-        run: sudo apt-get install -y subversion
-
-      # ── 5. Checkout SVN (solo trunk e tags, senza assets) ───────────────────
-      - name: Checkout SVN repository
-        env:
-          WPORG_SLUG: ${{ secrets.WPORG_SLUG }}
-          WPORG_USERNAME: ${{ secrets.WPORG_USERNAME }}
-          WPORG_PASSWORD: ${{ secrets.WPORG_PASSWORD }}
+      # ── 4. Crea lo zip del plugin ────────────────────────────────────────────
+      - name: Build zip
+        id: zip
         run: |
-          SVN_URL="https://plugins.svn.wordpress.org/${WPORG_SLUG}"
+          VERSION="${{ steps.version.outputs.version }}"
+          ZIP_NAME="wp-auto-alt-image-${VERSION}.zip"
 
-          echo "→ Checkout SVN: $SVN_URL"
-          svn checkout \
-            --depth immediates \
-            --username "$WPORG_USERNAME" \
-            --password "$WPORG_PASSWORD" \
-            --no-auth-cache \
-            "$SVN_URL" svn-repo
+          mkdir -p /tmp/wp-auto-alt-image
 
-          # Popola trunk e tags (senza assets per ora)
-          svn update --set-depth infinity svn-repo/trunk
-          svn update --set-depth infinity svn-repo/tags   || true
+          cp wp-auto-alt-image.php /tmp/wp-auto-alt-image/
+          cp README.md             /tmp/wp-auto-alt-image/
+          cp CHANGELOG.md          /tmp/wp-auto-alt-image/
 
-      # ── 6. Copia i file del plugin in trunk ─────────────────────────────────
-      - name: Sync plugin files to trunk
-        run: |
-          # Pulisci trunk mantenendo la cartella .svn
-          find svn-repo/trunk -mindepth 1 -not -path 'svn-repo/trunk/.svn*' -delete 2>/dev/null || true
+          cd /tmp
+          zip -r "$ZIP_NAME" wp-auto-alt-image/
 
-          # File inclusi nel deploy (modifica la lista se necessario)
-          INCLUDE_FILES=(
-            "wp-auto-alt-image.php"
-            "README.md"
-          )
+          echo "zip_path=/tmp/$ZIP_NAME" >> "$GITHUB_OUTPUT"
+          echo "zip_name=$ZIP_NAME"      >> "$GITHUB_OUTPUT"
+          echo "→ Zip creato: $ZIP_NAME"
 
-          for f in "${INCLUDE_FILES[@]}"; do
-            if [ -f "$f" ]; then
-              cp "$f" "svn-repo/trunk/$f"
-              echo "  Copiato: $f"
-            else
-              echo "  ⚠️  File non trovato: $f"
-            fi
-          done
-
-      # ── 7. Aggiunge i nuovi file e rimuove quelli eliminati ─────────────────
-      - name: SVN add/remove
-        run: |
-          cd svn-repo
-          # Aggiunge tutti i file non tracciati
-          svn status trunk | grep '^?' | awk '{print $2}' | xargs -r svn add
-          # Rimuove i file tracciati che non esistono più
-          svn status trunk | grep '^!'  | awk '{print $2}' | xargs -r svn delete
-
-      # ── 8. Crea il tag SVN dalla versione ───────────────────────────────────
-      - name: Create SVN tag
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
-        run: |
-          cd svn-repo
-          TAG_PATH="tags/$VERSION"
-
-          if [ -d "$TAG_PATH" ]; then
-            echo "⚠️  Il tag SVN $VERSION esiste già — skip."
-          else
-            echo "→ Creazione tag SVN: $TAG_PATH"
-            svn copy trunk "$TAG_PATH" -m "Tagging version $VERSION"
-          fi
-
-      # ── 9. Commit su SVN ────────────────────────────────────────────────────
-      - name: SVN commit
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
-          WPORG_USERNAME: ${{ secrets.WPORG_USERNAME }}
-          WPORG_PASSWORD: ${{ secrets.WPORG_PASSWORD }}
-        run: |
-          cd svn-repo
-
-          # Verifica se ci sono modifiche da committare
-          CHANGES=$(svn status | grep -v '^?' | wc -l)
-          if [ "$CHANGES" -eq 0 ]; then
-            echo "ℹ️  Nessuna modifica da committare."
-            exit 0
-          fi
-
-          echo "→ Commit SVN versione $VERSION"
-          svn commit \
-            --username "$WPORG_USERNAME" \
-            --password "$WPORG_PASSWORD" \
-            --no-auth-cache \
-            -m "Release $VERSION" \
-            --non-interactive
-
-          echo "✅ Deploy completato: versione $VERSION pubblicata su WordPress.org."
+      # ── 5. Allega lo zip alla Release ────────────────────────────────────────
+      - name: Upload zip to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.zip.outputs.zip_path }}
