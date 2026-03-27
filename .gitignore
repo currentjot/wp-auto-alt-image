@@ -1,0 +1,75 @@
+# ──────────────────────────────────────────────────────────────────────────────
+# .gitignore — wp-auto-alt-image
+# https://github.com/currentjot/wp-auto-alt-image
+# ──────────────────────────────────────────────────────────────────────────────
+
+# ── Sistema operativo ─────────────────────────────────────────────────────────
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# ── IDE & editor ──────────────────────────────────────────────────────────────
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+*~
+.editorconfig
+
+# ── Node / NPM (build tools) ──────────────────────────────────────────────────
+node_modules/
+npm-debug.log*
+yarn-error.log
+.npm
+.yarn/
+package-lock.json
+yarn.lock
+
+# ── Composer (PHP) ────────────────────────────────────────────────────────────
+vendor/
+composer.lock
+
+# ── Build & dist ──────────────────────────────────────────────────────────────
+/dist/
+/build/
+*.zip
+*.tar.gz
+
+# ── Test & coverage ───────────────────────────────────────────────────────────
+/tests/coverage/
+.phpunit.result.cache
+phpunit.xml
+phpcs.xml
+.phpcs.xml
+
+# ── Ambiente locale WordPress ─────────────────────────────────────────────────
+# Ignora file WordPress se il repo è montato dentro wp-content/plugins/
+/wp-config.php
+/wp-content/
+/wp-admin/
+/wp-includes/
+*.log
+wp-cli.yml
+
+# ── SVN (WordPress.org deploy) ────────────────────────────────────────────────
+# La directory SVN viene creata temporaneamente dalla GitHub Action
+svn-repo/
+.svn/
+
+# ── Variabili d'ambiente ──────────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+
+# ── File temporanei ───────────────────────────────────────────────────────────
+*.tmp
+*.bak
+*.orig
+*.rej
