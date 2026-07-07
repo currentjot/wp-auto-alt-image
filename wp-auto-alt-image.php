@@ -3,7 +3,7 @@
  * Plugin Name:  WP Auto Alt Image
  * Plugin URI:   https://github.com/currentjot/wp-auto-alt-image
  * Description:  Sostituisce gli alt delle immagini sul frontend usando il titolo del post. Zero modifiche al DB. Rilevamento lingua via slug (/{LANG}/slug).
- * Version:      1.0.0
+ * Version:      1.1.0
  * Author:       currentjot
  * License:      GPL-2.0+
  * License URI:  https://www.gnu.org/licenses/gpl-2.0.html
@@ -16,7 +16,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'WPAAI_VERSION',    '1.0.0' );
+define( 'WPAAI_VERSION',    '1.1.0' );
 define( 'WPAAI_OPTION_KEY', 'wpaai_options' );
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -31,8 +31,9 @@ define( 'WPAAI_OPTION_KEY', 'wpaai_options' );
 function wpaai_get_options() {
 	$defaults = array(
 		'enabled'          => 1,
+		'alt_source'       => 'post_title',  // 'post_title' | 'per_image'
 		'replace_mode'     => 'empty_only',  // 'empty_only' | 'all'
-		'fallback'         => 'site_title',  // 'site_title' | 'filename' | 'empty'
+		'fallback'         => 'site_title',  // 'site_title' | 'empty'
 		'separator'        => '',
 		'append_site_name' => 0,
 		'post_types'       => array( 'post', 'page' ),
@@ -121,14 +122,32 @@ function wpaai_process_output( $html ) {
 		return $html;
 	}
 
-	$options  = wpaai_get_options();
-	$alt_text = wpaai_resolve_alt_text( $options );
+	$options   = wpaai_get_options();
+	$alt_text  = wpaai_resolve_alt_text( $options );
+	$per_image = ( 'per_image' === ( $options['alt_source'] ?? 'post_title' ) );
 
 	// Sostituzione regex su tutti i tag <img>.
 	$html = preg_replace_callback(
 		'/<img(\s[^>]*)?>/is',
-		function ( $matches ) use ( $alt_text, $options ) {
-			return wpaai_replace_img_alt( $matches[0], $alt_text, $options );
+		function ( $matches ) use ( $alt_text, $options, $per_image ) {
+			$tag_alt = $alt_text;
+
+			// Modalità automatica per ogni immagine: alt derivato dal nome file.
+			if ( $per_image ) {
+				$auto = wpaai_alt_from_filename( $matches[0], $options );
+				if ( '' !== $auto ) {
+					// Suffisso nome sito (stessa preferenza della modalità titolo).
+					if ( ! empty( $options['append_site_name'] ) && ! empty( $options['separator'] ) ) {
+						$site = get_bloginfo( 'name' );
+						if ( $site && $auto !== $site ) {
+							$auto .= $options['separator'] . $site;
+						}
+					}
+					$tag_alt = $auto;
+				}
+			}
+
+			return wpaai_replace_img_alt( $matches[0], $tag_alt, $options );
 		},
 		$html
 	);
@@ -155,6 +174,63 @@ function wpaai_process_output( $html ) {
 }
 
 /**
+ * Deriva un testo alt "umanizzato" dal nome file dell'immagine.
+ *
+ * Esempio: /uploads/2024/05/tramonto-sul-mare-1024x683.jpg → "Tramonto sul mare".
+ * Restituisce stringa vuota se il nome file non è descrittivo (es. IMG_1234, DSC0001).
+ *
+ * @param  string $img_tag Tag <img> completo.
+ * @param  array  $options Opzioni plugin.
+ * @return string
+ */
+function wpaai_alt_from_filename( $img_tag, $options ) {
+	if ( ! preg_match( '/\bsrc\s*=\s*(["\'])(.*?)\1/is', $img_tag, $m ) ) {
+		return '';
+	}
+
+	$src  = html_entity_decode( $m[2] );
+	$path = parse_url( $src, PHP_URL_PATH );
+	if ( ! $path ) {
+		return '';
+	}
+
+	$name = pathinfo( $path, PATHINFO_FILENAME );
+	if ( '' === $name ) {
+		return '';
+	}
+
+	// Rimuove suffissi generati da WordPress: -300x200, -scaled, -rotated, -e1699999999.
+	$name = preg_replace( '/-\d+x\d+$/', '', $name );
+	$name = preg_replace( '/-(scaled|rotated|e\d{8,})$/i', '', $name );
+
+	// Separatori → spazi, normalizza.
+	$name = str_replace( array( '-', '_', '.', '+', '%20' ), ' ', $name );
+	$name = trim( preg_replace( '/\s+/', ' ', $name ) );
+
+	// Scarta nomi non descrittivi (solo cifre, o pattern fotocamera/screenshot).
+	if (
+		'' === $name
+		|| ! preg_match( '/[a-zA-Z\x{00C0}-\x{024F}]{3,}/u', $name )
+		|| preg_match( '/^(img|dsc|dscn|dcim|pxl|image|photo|foto|screenshot|screen shot|wp)[\s\d]*$/i', $name )
+	) {
+		return '';
+	}
+
+	$alt = function_exists( 'mb_strtoupper' )
+		? mb_strtoupper( mb_substr( $name, 0, 1 ) ) . mb_substr( $name, 1 )
+		: ucfirst( $name );
+
+	/**
+	 * Filtro per personalizzare l'alt derivato dal nome file.
+	 *
+	 * @param string $alt     Alt calcolato dal nome file.
+	 * @param string $src     Src dell'immagine.
+	 * @param array  $options Opzioni plugin.
+	 */
+	return apply_filters( 'wpaai_alt_from_filename', $alt, $src, $options );
+}
+
+/**
  * Sostituisce l'attributo alt in un singolo tag <img>.
  *
  * @param  string $img_tag  Tag <img> originale.
@@ -164,6 +240,12 @@ function wpaai_process_output( $html ) {
  */
 function wpaai_replace_img_alt( $img_tag, $alt_text, $options ) {
 	$replace_mode = $options['replace_mode'] ?? 'empty_only';
+
+	// Non toccare immagini dichiarate decorative (accessibilità).
+	if ( preg_match( '/\brole\s*=\s*(["\'])presentation\1/i', $img_tag )
+		|| preg_match( '/\baria-hidden\s*=\s*(["\'])true\1/i', $img_tag ) ) {
+		return $img_tag;
+	}
 
 	$has_alt   = (bool) preg_match( '/\balt\s*=/i', $img_tag );
 	$alt_empty = $has_alt && (bool) preg_match( '/\balt\s*=\s*(["\'])\s*\1/i', $img_tag );
@@ -176,9 +258,9 @@ function wpaai_replace_img_alt( $img_tag, $alt_text, $options ) {
 	$escaped = esc_attr( $alt_text );
 
 	if ( $has_alt ) {
-		// Sostituisce il valore dell'alt esistente.
+		// Sostituisce il valore dell'alt esistente (gestisce anche apici interni).
 		return preg_replace(
-			'/\balt\s*=\s*(["\'])[^"\']*\1/i',
+			'/\balt\s*=\s*(["\'])(?:(?!\1).)*\1/is',
 			'alt="' . $escaped . '"',
 			$img_tag,
 			1
@@ -322,6 +404,8 @@ function wpaai_sanitize_options( $input ) {
 	$clean = array();
 
 	$clean['enabled']          = ! empty( $input['enabled'] ) ? 1 : 0;
+	$clean['alt_source']       = in_array( $input['alt_source'] ?? '', array( 'post_title', 'per_image' ), true )
+	                              ? $input['alt_source'] : 'post_title';
 	$clean['replace_mode']     = in_array( $input['replace_mode'] ?? '', array( 'empty_only', 'all' ), true )
 	                              ? $input['replace_mode'] : 'empty_only';
 	$clean['fallback']         = in_array( $input['fallback'] ?? '', array( 'site_title', 'empty' ), true )
@@ -429,6 +513,28 @@ function wpaai_render_page() {
 								<span class="wpaai-tgl-s"></span>
 							</label>
 							<p class="description">Quando disabilitato, il plugin non altera nulla sul frontend.</p>
+						</td>
+					</tr>
+				</tbody></table>
+			</div>
+
+			<!-- ░ Sorgente alt ░ -->
+			<div class="wpaai-card">
+				<h2>🤖 Sorgente del testo alt</h2>
+				<table class="form-table" role="presentation"><tbody>
+					<tr>
+						<th>Come generare l'alt</th>
+						<td>
+							<fieldset>
+								<label>
+									<input type="radio" name="<?php echo esc_attr( $key ); ?>[alt_source]" value="post_title" <?php checked( $o['alt_source'], 'post_title' ); ?> />
+									<span><strong>Titolo della pagina/post</strong><p class="description">Tutte le immagini della pagina ricevono lo stesso alt, basato sul titolo del contenuto corrente.</p></span>
+								</label>
+								<label>
+									<input type="radio" name="<?php echo esc_attr( $key ); ?>[alt_source]" value="per_image" <?php checked( $o['alt_source'], 'per_image' ); ?> />
+									<span><strong>Automatico per ogni immagine</strong><p class="description">Ogni immagine riceve un alt unico derivato dal nome del file (es. <code>tramonto-sul-mare-1024x683.jpg</code> → <em>Tramonto sul mare</em>). Se il nome file non è descrittivo (es. <code>IMG_1234.jpg</code>) viene usato il titolo della pagina come ripiego.</p></span>
+								</label>
+							</fieldset>
 						</td>
 					</tr>
 				</tbody></table>

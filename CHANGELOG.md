@@ -7,6 +7,22 @@ e il progetto adotta il [Versionamento Semantico](https://semver.org/lang/it/).
 
 ---
 
+## [1.1.0] — 2026-07-07
+
+### ✨ Aggiunto
+
+- **Alt automatico per ogni immagine**: nuova opzione "Sorgente del testo alt" che permette di generare un alt unico per ciascuna immagine, derivato in automatico dal nome del file (es. `tramonto-sul-mare-1024x683.jpg` → *Tramonto sul mare*). Suffissi WordPress (`-300x200`, `-scaled`, `-rotated`, `-eXXXXXXXX`) rimossi automaticamente; nomi non descrittivi (es. `IMG_1234`, `DSC0001`, screenshot) usano il titolo della pagina come ripiego.
+- Nuovo filtro `wpaai_alt_from_filename` per personalizzare l'alt derivato dal nome file.
+- Il suffisso "nome del sito" viene applicato anche in modalità per-immagine.
+
+### 🛠 Corretto
+
+- La regex di sostituzione dell'alt ora gestisce correttamente valori contenenti l'altro tipo di apice (es. `alt="John's dog"`), prima potevano corrompere il tag.
+- Le immagini decorative (`role="presentation"` o `aria-hidden="true"`) non vengono più toccate, come richiesto dalle linee guida di accessibilità.
+- Rimosso dal codice il valore `filename` non implementato tra i fallback documentati.
+
+---
+
 ## [1.0.0] — 2025-01-01
 
 ### ✨ Aggiunto

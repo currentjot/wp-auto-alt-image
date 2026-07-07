@@ -1,12 +1,12 @@
 # WP Auto Alt Image
 
-[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](https://github.com/currentjot/wp-auto-alt-image/releases)
+[![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)](https://github.com/currentjot/wp-auto-alt-image/releases)
 [![License](https://img.shields.io/badge/license-GPL--2.0%2B-green.svg)](https://www.gnu.org/licenses/gpl-2.0.html)
 [![WordPress](https://img.shields.io/badge/WordPress-6.0%2B-21759b.svg)](https://wordpress.org)
 [![PHP](https://img.shields.io/badge/PHP-7.4%2B-8892be.svg)](https://php.net)
 [![Deploy](https://github.com/currentjot/wp-auto-alt-image/actions/workflows/deploy.yml/badge.svg)](https://github.com/currentjot/wp-auto-alt-image/actions/workflows/deploy.yml)
 
-Sostituisce automaticamente gli attributi `alt` delle immagini sul frontend usando il titolo del post o della pagina corrente. **Zero modifiche al database.** Rilevamento lingua via slug.
+Sostituisce automaticamente gli attributi `alt` delle immagini sul frontend usando il titolo del post/pagina corrente **oppure, in automatico per ogni immagine, un alt unico derivato dal nome del file**. **Zero modifiche al database.** Rilevamento lingua via slug.
 
 ---
 
@@ -22,6 +22,7 @@ Il database rimane intatto — disattivare il plugin riporta immediatamente tutt
 |---|---|
 | Zero modifiche al DB | Tutto runtime via output buffer, reversibile in un click |
 | Alt dal titolo del post | `get_the_title()` sulla pagina corrente |
+| Alt automatico per immagine | Alt unico da nome file (es. `tramonto-sul-mare-1024x683.jpg` → *Tramonto sul mare*), con ripiego sul titolo per nomi non descrittivi |
 | Rilevamento lingua via slug | Pattern `/{LANG}/slug` (es. `/en/`, `/it/`, `/pt-BR/`) |
 | Fallback configurabile | Titolo del sito oppure `alt=""` vuoto |
 | Suffisso personalizzabile | Es. `"Titolo articolo \| Nome sito"` |
@@ -29,7 +30,7 @@ Il database rimane intatto — disattivare il plugin riporta immediatamente tutt
 | Filtro per post type | Seleziona su quali tipi di contenuto applicarlo |
 | Esclusione per ID | Escludi specifici post/pagine per ID |
 | Debug mode | Commento HTML + `console.log` con lingua e alt calcolato |
-| Hook per sviluppatori | Filtro `wpaai_alt_text` per personalizzare il testo alt |
+| Hook per sviluppatori | Filtri `wpaai_alt_text` e `wpaai_alt_from_filename` per personalizzare il testo alt |
 | Singolo file | Zero dipendenze, zero asset esterni |
 
 ## Rilevamento lingua (slug-based)
